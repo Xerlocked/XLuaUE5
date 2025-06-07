@@ -83,5 +83,5 @@ bool XLuaVirtualMachine::RunFile(const FString& FilePath)
 		UE_LOG(LogTemp, Error, TEXT("Failed to load lua file: %s"), *FilePath);
 		return false;
 	}
-	return true;
+	return RunString(ScriptCode);
 }

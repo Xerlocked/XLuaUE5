@@ -15,7 +15,7 @@ public:
 
 	bool RunString(const FString& Code) const;
 
-	static bool RunFile(const FString& FilePath);
+	bool RunFile(const FString& FilePath);
 
 	XLuaVirtualMachine(const XLuaVirtualMachine&) = delete;
 	XLuaVirtualMachine& operator=(const XLuaVirtualMachine&) = delete;

@@ -1,7 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "XLua.h"
-#include "XLuaVirtualMachine.h"
 
 // C++ 컴파일러가 C 소스 코드를 올바르게 처리하도록 설정
 #if PLATFORM_WINDOWS
@@ -59,12 +58,6 @@
 void FXLuaModule::StartupModule()
 {
 	UE_LOG(LogTemp, Warning, TEXT("XLua Module has been loaded!"));
-
-	TSharedPtr<XLuaVirtualMachine> VM = MakeShared<XLuaVirtualMachine>();
-
-	VM->RunString(TEXT("print('>>>> Hello from the new LuaVM class!')"));
-	VM->RunString(TEXT("local a = 10; local b = 20; print('a + b =', a + b)"));
-
 }
 
 void FXLuaModule::ShutdownModule()
