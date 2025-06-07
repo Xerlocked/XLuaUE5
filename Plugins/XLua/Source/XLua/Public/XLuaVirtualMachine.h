@@ -11,11 +11,14 @@ class XLUA_API XLuaVirtualMachine
 public:
 	XLuaVirtualMachine();
 	~XLuaVirtualMachine();
-
-
+	
 	bool RunString(const FString& Code) const;
 
-	bool RunFile(const FString& FilePath);
+	bool RunFile(const FString& FilePath) const;
+
+	void BindUObject(UObject* InObject);
+
+	lua_State* GetLuaState() const { return L; }
 
 	XLuaVirtualMachine(const XLuaVirtualMachine&) = delete;
 	XLuaVirtualMachine& operator=(const XLuaVirtualMachine&) = delete;

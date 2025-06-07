@@ -1,6 +1,9 @@
 //  copyright 2025 @xerlocked
 
 #include "XLuaComponent.h"
+
+#include <ThirdParty/lua/lua.h>
+
 #include "XLuaVirtualMachine.h"
 #include "Misc/Paths.h"
 
@@ -25,6 +28,12 @@ void UXLuaComponent::BeginPlay()
 	UE_LOG(LogTemp, Log, TEXT("XLuaComponent: Attempting to run Lua script: %s"), *FullPath);
 	
 	VMInstance = MakeShared<XLuaVirtualMachine>();
+
+	if (AActor* Owner = GetOwner())
+	{
+		VMInstance->BindUObject(Owner);
+		lua_setglobal(VMInstance->GetLuaState(), "self");
+	}
 	
 	VMInstance->RunFile(FullPath);
 }
