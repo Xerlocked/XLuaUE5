@@ -3,13 +3,6 @@
 #include "XLuaVirtualMachine.h"
 #include "Misc/FileHelper.h"
 
-extern "C"
-{
-#include "ThirdParty/lua/lua.h"
-#include "ThirdParty/lua/lauxlib.h"
-#include "ThirdParty/lua/lualib.h"
-}
-
 static int RunPrint(lua_State* L)
 {
 	FString FinalString;
@@ -33,6 +26,81 @@ static int RunPrint(lua_State* L)
 	return 0;
 }
 
+static int GenericUFunctionCall_Thunk(lua_State* L)
+{
+	UObject* TargetObject = static_cast<UObject*>(lua_touserdata(L, lua_upvalueindex(1)));
+	UFunction* FunctionToCall = static_cast<UFunction*>(lua_touserdata(L, lua_upvalueindex(2)));
+
+	if (TargetObject == nullptr || FunctionToCall == nullptr)
+	{
+		return 0;
+	}
+
+	void* Params = FMemory_Alloca(FunctionToCall->ParmsSize);
+	FMemory::Memzero(Params, FunctionToCall->ParmsSize);
+
+	int LuaStackIndex = 2;
+	for (TFieldIterator<FProperty> Iterator(FunctionToCall); Iterator; ++Iterator)
+	{
+		FProperty* Prop = *Iterator;
+		if (Prop->HasAnyPropertyFlags(CPF_Parm) && !Prop->HasAnyPropertyFlags(CPF_ReturnParm | CPF_OutParm))
+		{
+			if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+			{
+				if (lua_type(L, LuaStackIndex) == LUA_TSTRING)
+				{
+					const char* LuaString = lua_tostring(L, LuaStackIndex);
+					FString* ParamPtr = StrProp->ContainerPtrToValuePtr<FString>(Params);
+					*ParamPtr = FString(UTF8_TO_TCHAR(LuaString));
+				}
+			}
+
+			// TODO: FFloatProperty, FIntProperty, ...
+
+			LuaStackIndex++;
+		}
+	}
+	
+	TargetObject->ProcessEvent(FunctionToCall, Params);
+	
+	int NumReturnValues = 0;
+	for (TFieldIterator<FProperty> Iterator(FunctionToCall); Iterator; ++Iterator)
+	{
+		FProperty* Prop = *Iterator;
+		if (Prop->HasAnyPropertyFlags(CPF_ReturnParm))
+		{
+			// FString
+			if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+			{
+				FString& ReturnValue = *StrProp->ContainerPtrToValuePtr<FString>(Params);
+				lua_pushstring(L, TCHAR_TO_UTF8(*ReturnValue));
+				NumReturnValues = 1;
+				break;
+			}
+			
+			// FVector
+			if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+			{
+				if (StructProp->Struct == TBaseStructure<FVector>::Get())
+				{
+					FVector& ReturnValue = *StructProp->ContainerPtrToValuePtr<FVector>(Params);
+					lua_newtable(L);
+					lua_pushnumber(L, ReturnValue.X);
+					lua_setfield(L, -2, "x");
+					lua_pushnumber(L, ReturnValue.Y);
+					lua_setfield(L, -2, "y");
+					lua_pushnumber(L, ReturnValue.Z);
+					lua_setfield(L, -2, "z");
+					NumReturnValues = 1;
+					break;
+				}
+			}
+		}
+	}
+	
+	return NumReturnValues;
+}
+
 static int UObject__index(lua_State* L)
 {
 	UObject** UObjectPtr = static_cast<UObject**>(lua_touserdata(L, 1));
@@ -44,20 +112,17 @@ static int UObject__index(lua_State* L)
 		return 1;
 	}
 
-	// [test] set binding GetName() func.
-	if (strcmp(Key, "GetName") == 0)
+	UObject* TargetObject = *UObjectPtr;
+	UClass* TargetClass = TargetObject->GetClass();
+
+	UFunction* FoundFunction = TargetClass->FindFunctionByName(FName(Key));
+	
+	if (IsValid(FoundFunction))
 	{
-		lua_pushcfunction(L, [](lua_State* L_Thunk) -> int
-		{
-			UObject** Ptr = static_cast<UObject**>(lua_touserdata(L_Thunk, 1));
-			if (Ptr && *Ptr)
-			{
-				FString ObjectName = (*Ptr)->GetName();
-				lua_pushstring(L_Thunk, TCHAR_TO_UTF8(*ObjectName));
-				return 1;
-			}
-			return 0;
-		});
+		lua_pushlightuserdata(L, TargetObject);
+		lua_pushlightuserdata(L, FoundFunction);
+
+		lua_pushcclosure(L, GenericUFunctionCall_Thunk, 2);
 	}
 	else
 	{
@@ -107,7 +172,16 @@ bool XLuaVirtualMachine::RunString(const FString& Code) const
 	if (Result != LUA_OK)
 	{
 		const char* ErrorMsg = lua_tostring(L, -1);
-		UE_LOG(LogTemp, Error, TEXT("Lua Error: %hs"), UTF8_TO_TCHAR(ErrorMsg));
+		if (ErrorMsg)
+		{
+			FString SafeErrorMessage(UTF8_TO_TCHAR(ErrorMsg));
+			UE_LOG(LogTemp, Error, TEXT("Lua Error: %s"), *SafeErrorMessage);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Lua Error: Unknown error (message is null)."));
+		}
+        
 		lua_pop(L, 1);
 		return false;
 	}
@@ -126,7 +200,7 @@ bool XLuaVirtualMachine::RunFile(const FString& FilePath) const
 	return RunString(ScriptCode);
 }
 
-void XLuaVirtualMachine::BindUObject(UObject* InObject)
+void XLuaVirtualMachine::BindUObject(UObject* InObject) const
 {
 	if (!L || !InObject)
 	{

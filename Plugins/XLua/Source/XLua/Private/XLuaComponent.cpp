@@ -1,9 +1,6 @@
 //  copyright 2025 @xerlocked
 
 #include "XLuaComponent.h"
-
-#include <ThirdParty/lua/lua.h>
-
 #include "XLuaVirtualMachine.h"
 #include "Misc/Paths.h"
 
@@ -35,7 +32,10 @@ void UXLuaComponent::BeginPlay()
 		lua_setglobal(VMInstance->GetLuaState(), "self");
 	}
 	
-	VMInstance->RunFile(FullPath);
+	if (VMInstance->RunFile(FullPath))
+	{
+		
+	}
 }
 
 void UXLuaComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
